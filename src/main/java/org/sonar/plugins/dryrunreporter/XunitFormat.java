@@ -19,10 +19,12 @@
  */
 package org.sonar.plugins.dryrunreporter;
 
+import org.sonar.api.i18n.RuleI18n;
+import org.sonar.api.rules.Rule;
+import org.sonar.api.rules.RuleFinder;
+import org.sonar.api.rules.RuleRepository;
 import org.sonar.api.batch.SonarIndex;
-
 import org.sonar.api.issue.IssueQuery;
-
 import org.apache.xml.serialize.OutputFormat;
 import org.apache.xml.serialize.XMLSerializer;
 import org.sonar.api.CoreProperties;
@@ -52,6 +54,7 @@ import java.io.File;
 import java.io.FileOutputStream;
 import java.io.IOException;
 import java.util.Collection;
+import java.util.Locale;
 
 @DependsUpon(DecoratorBarriers.ISSUES_TRACKED)
 public class XunitFormat implements PostJob {
@@ -59,11 +62,15 @@ public class XunitFormat implements PostJob {
   private Settings settings;
   private ResourcePerspectives resourcePerspectives;
   private ModuleFileSystem fileSystem;
+  private RuleFinder ruleFinder;
+  private RuleI18n ruleI18n;
 
-  public XunitFormat(Settings settings, ModuleFileSystem fileSystem, ResourcePerspectives resourcePerspectives) {
+  public XunitFormat(Settings settings, ModuleFileSystem fileSystem, ResourcePerspectives resourcePerspectives, RuleFinder ruleFinder, RuleI18n ruleI18n) {
     this.settings = settings;
     this.fileSystem = fileSystem;
     this.resourcePerspectives = resourcePerspectives;
+    this.ruleFinder = ruleFinder;
+    this.ruleI18n = ruleI18n;
   }
 
   public void executeOn(Project project, SensorContext context) {
@@ -76,7 +83,7 @@ public class XunitFormat implements PostJob {
         dom.appendChild(root);
 
         reportAlerts(context, dom, root);
-        reportIssues(project, dom, root);
+        reportIssues(context, project,  dom, root);
 
         File report = new File(fileSystem.baseDir(), "dryrun-results.xml");
         report.createNewFile();
@@ -93,15 +100,22 @@ public class XunitFormat implements PostJob {
     }
   }
 
-  private void reportIssues(Project project, Document dom, Element root) {
-    Issuable issuable = resourcePerspectives.as(Issuable.class, (Resource) project);
-    for (Issue issue : issuable.issues()) {
-      Element testCase = dom.createElement("testcase");
-      Element error = dom.createElement("error");
-      error.setAttribute("message", issue.message());
-      testCase.appendChild(error);
-      root.appendChild(testCase);
+  private void reportIssues(SensorContext context, Resource<?> resource, Document dom, Element root) {
+    for (Resource<?> r : context.getChildren(resource)) {
+      Issuable issuable = resourcePerspectives.as(Issuable.class, r);
+      for (Issue issue : issuable.issues()) {
+        Element testCase = dom.createElement("testcase");
+        Element error = dom.createElement("error");
+        Rule rule = ruleFinder.findByKey(issue.ruleKey());
+        error.setAttribute("message", ruleI18n.getName(rule, Locale.ENGLISH));
+        testCase.appendChild(error);
+        root.appendChild(testCase);
+      }
+      if(!context.getChildren(r).isEmpty()){
+        reportIssues(context, r, dom, root);
+      }
     }
+
   }
 
   private void reportAlerts(SensorContext context, Document dom, Element root) {

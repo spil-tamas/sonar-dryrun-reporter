@@ -10,3 +10,4 @@ target/
 .classpath
 *.*~
 test-output/
+/target

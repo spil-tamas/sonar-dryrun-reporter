@@ -19,6 +19,9 @@
  */
 package org.sonar.plugins.dryrunreporter;
 
+import org.sonar.api.i18n.RuleI18n;
+
+import org.sonar.api.rules.RuleFinder;
 import org.junit.Before;
 import org.junit.Test;
 import org.sonar.api.batch.SensorContext;
@@ -44,10 +47,12 @@ public class XunitFormatTest {
     Settings settings = mock(Settings.class);
     Project project = new Project("dummy");
     SensorContext context = mock(SensorContext.class);
+    RuleFinder ruleFinder = mock(RuleFinder.class);
+    RuleI18n ruleI18n = mock(RuleI18n.class);
 
     ModuleFileSystem fileSystem = mockModuleFileSystem(null, null);
 
-    new XunitFormat(settings, fileSystem, resourcePerspectives).executeOn(project, context);
+    new XunitFormat(settings, fileSystem, resourcePerspectives, ruleFinder, ruleI18n).executeOn(project, context);
   }
 
   @Test
