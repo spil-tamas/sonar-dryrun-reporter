@@ -19,21 +19,14 @@
  */
 package org.sonar.plugins.dryrunreporter;
 
-import org.sonar.api.i18n.RuleI18n;
-import org.sonar.api.rules.Rule;
-import org.sonar.api.rules.RuleFinder;
-import org.sonar.api.rules.RuleRepository;
-import org.sonar.api.batch.SonarIndex;
-import org.sonar.api.issue.IssueQuery;
 import org.apache.xml.serialize.OutputFormat;
 import org.apache.xml.serialize.XMLSerializer;
 import org.sonar.api.CoreProperties;
-import org.sonar.api.batch.DecoratorBarriers;
-import org.sonar.api.batch.DependsUpon;
 import org.sonar.api.batch.PostJob;
 import org.sonar.api.batch.SensorContext;
 import org.sonar.api.component.ResourcePerspectives;
 import org.sonar.api.config.Settings;
+import org.sonar.api.i18n.RuleI18n;
 import org.sonar.api.issue.Issuable;
 import org.sonar.api.issue.Issue;
 import org.sonar.api.measures.CoreMetrics;
@@ -42,6 +35,8 @@ import org.sonar.api.measures.MeasuresFilters;
 import org.sonar.api.measures.Metric;
 import org.sonar.api.resources.Project;
 import org.sonar.api.resources.Resource;
+import org.sonar.api.rules.Rule;
+import org.sonar.api.rules.RuleFinder;
 import org.sonar.api.scan.filesystem.ModuleFileSystem;
 import org.w3c.dom.Document;
 import org.w3c.dom.Element;
@@ -56,7 +51,6 @@ import java.io.IOException;
 import java.util.Collection;
 import java.util.Locale;
 
-@DependsUpon(DecoratorBarriers.ISSUES_TRACKED)
 public class XunitFormat implements PostJob {
 
   private Settings settings;
@@ -82,10 +76,27 @@ public class XunitFormat implements PostJob {
         Element root = dom.createElement("testsuite");
         dom.appendChild(root);
 
-        reportAlerts(context, dom, root);
-        reportIssues(context, project,  dom, root);
+        int alerts = reportAlerts(context, dom, root);
+        int issues = reportIssues(context, project, dom, root);
+        root.setAttribute("errors", String.valueOf(alerts + issues));
 
-        File report = new File(fileSystem.baseDir(), "dryrun-results.xml");
+        if ((issues + alerts) == 0) {
+          root.setAttribute("tests", "2");
+          Element testCase = dom.createElement("testcase");
+          testCase.setAttribute("classname", "issues");
+          testCase.setAttribute("name", "passing");
+          root.appendChild(testCase);
+
+          testCase = dom.createElement("testcase");
+          testCase.setAttribute("classname", "alerts");
+          testCase.setAttribute("name", "passing");
+          root.appendChild(testCase);
+        } else {
+          root.setAttribute("tests", String.valueOf(alerts + issues));
+        }
+        root.setAttribute("name", "Sonar dryrun results");
+
+        File report = new File(fileSystem.baseDir(), settings.getString(DryrunReporterPlugin.REPORT_LOCATION_KEY));
         report.createNewFile();
 
         OutputFormat format = new OutputFormat(dom);
@@ -100,35 +111,59 @@ public class XunitFormat implements PostJob {
     }
   }
 
-  private void reportIssues(SensorContext context, Resource<?> resource, Document dom, Element root) {
+  private int reportIssues(SensorContext context, Resource<?> resource, Document dom, Element root) {
+    // TODO: with API 4.0 we can use the org.sonar.api.issue.ProjectIssues#issues()
+    int counter = 0;
     for (Resource<?> r : context.getChildren(resource)) {
       Issuable issuable = resourcePerspectives.as(Issuable.class, r);
       for (Issue issue : issuable.issues()) {
+        Rule rule = ruleFinder.findByKey(issue.ruleKey());
+
         Element testCase = dom.createElement("testcase");
         Element error = dom.createElement("error");
-        Rule rule = ruleFinder.findByKey(issue.ruleKey());
+        // TODO: with api 4.0 we can get the isNew
+        testCase.setAttribute("classname", "issues");
         error.setAttribute("message", ruleI18n.getName(rule, Locale.ENGLISH));
+        testCase.setAttribute("name", rule.getRepositoryKey() + ":" + rule.getKey());
+        error.setTextContent(
+            issue.severity() + "\n"
+              + ruleI18n.getName(rule, Locale.ENGLISH)
+              + "\nin file:"
+              + r.getLongName() + ":" + ((issue.line() != null) ? issue.line() : "")
+              + "\nlink: "
+              + settings.getString(CoreProperties.SERVER_BASE_URL) + "/rules_configuration/index/" + rule.getRepositoryKey() + "#rule_" + rule.getId()
+            );
         testCase.appendChild(error);
         root.appendChild(testCase);
+        counter++;
       }
-      if(!context.getChildren(r).isEmpty()){
-        reportIssues(context, r, dom, root);
+      if (!context.getChildren(r).isEmpty()) {
+        counter = counter + reportIssues(context, r, dom, root);
       }
     }
-
+    return counter;
   }
 
-  private void reportAlerts(SensorContext context, Document dom, Element root) {
+  private int reportAlerts(SensorContext context, Document dom, Element root) {
+    int counter = 0;
     Collection<Measure> measures = context.getMeasures(MeasuresFilters.all());
     for (Measure measure : measures) {
       if (isErrorAlert(measure) || isWarningAlert(measure)) {
         Element testCase = dom.createElement("testcase");
+        testCase.setAttribute("classname", "alerts");
+        testCase.setAttribute("name", measure.getAlertText());
         Element error = dom.createElement("error");
         error.setAttribute("message", measure.getAlertText());
+        String status = (isErrorAlert(measure)) ? "ERROR" : "WARNING";
+        error.setTextContent(status + "\n"
+          + measure.getAlertText()
+          + "\n");
         testCase.appendChild(error);
         root.appendChild(testCase);
+        counter++;
       }
     }
+    return counter;
   }
 
   private boolean isWarningAlert(Measure measure) {

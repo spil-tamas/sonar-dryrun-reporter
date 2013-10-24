@@ -19,12 +19,25 @@
  */
 package org.sonar.plugins.dryrunreporter;
 
-import java.util.List;
-
 import com.google.common.collect.ImmutableList;
+import org.sonar.api.Properties;
+import org.sonar.api.Property;
 import org.sonar.api.SonarPlugin;
 
+import java.util.List;
+
+@Properties({
+  @Property(
+    key = DryrunReporterPlugin.REPORT_LOCATION_KEY,
+    defaultValue = DryrunReporterPlugin.REPORT_LOCATION_DEFAULT_VALUE,
+    name = "The location of the report",
+    description = "Name and path of the file to generate the report.",
+    global = true, project = true)
+})
 public class DryrunReporterPlugin extends SonarPlugin {
+
+  public static final String REPORT_LOCATION_KEY ="sonar.dryrunreporter.location";
+  public static final String REPORT_LOCATION_DEFAULT_VALUE ="dryrun-results.xml";
 
   public List<?> getExtensions() {
     return ImmutableList.of(XunitFormat.class);
