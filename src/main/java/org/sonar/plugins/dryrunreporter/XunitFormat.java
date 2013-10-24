@@ -131,7 +131,7 @@ public class XunitFormat implements PostJob {
               + "\nin file:"
               + r.getLongName() + ":" + ((issue.line() != null) ? issue.line() : "")
               + "\nlink: "
-              + settings.getString(CoreProperties.SERVER_BASE_URL) + "/rules_configuration/index/" + rule.getRepositoryKey() + "#rule_" + rule.getId()
+              + settings.getString(CoreProperties.SERVER_BASE_URL) + "/rules/show/" + rule.getRepositoryKey() + ":" + rule.getConfigKey()
             );
         testCase.appendChild(error);
         root.appendChild(testCase);
