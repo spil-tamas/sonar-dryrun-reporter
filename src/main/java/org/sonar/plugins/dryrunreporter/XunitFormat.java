@@ -19,6 +19,10 @@
  */
 package org.sonar.plugins.dryrunreporter;
 
+import org.slf4j.LoggerFactory;
+
+import org.slf4j.Logger;
+
 import org.apache.xml.serialize.OutputFormat;
 import org.apache.xml.serialize.XMLSerializer;
 import org.sonar.api.CoreProperties;
@@ -52,6 +56,8 @@ import java.util.Collection;
 import java.util.Locale;
 
 public class XunitFormat implements PostJob {
+
+  Logger logger = LoggerFactory.getLogger(getClass());
 
   private Settings settings;
   private ResourcePerspectives resourcePerspectives;
@@ -116,9 +122,11 @@ public class XunitFormat implements PostJob {
     int counter = 0;
     for (Resource<?> r : context.getChildren(resource)) {
       Issuable issuable = resourcePerspectives.as(Issuable.class, r);
+      logger.debug("Resource: " + r.getEffectiveKey());
+      logger.debug("Issues: " + issuable.issues().size());
       for (Issue issue : issuable.issues()) {
         Rule rule = ruleFinder.findByKey(issue.ruleKey());
-
+        logger.debug("Rule: " + rule.getName());
         Element testCase = dom.createElement("testcase");
         Element error = dom.createElement("error");
         // TODO: with api 4.0 we can get the isNew
@@ -131,10 +139,11 @@ public class XunitFormat implements PostJob {
               + "\nin file:"
               + r.getLongName() + ":" + ((issue.line() != null) ? issue.line() : "")
               + "\nlink: "
-              + settings.getString(CoreProperties.SERVER_BASE_URL) + "/rules/show/" + rule.getRepositoryKey() + ":" + rule.getConfigKey()
+              + settings.getString("sonar.host.url") + "/rules/show/" + rule.getRepositoryKey() + ":" + rule.getConfigKey()
             );
         testCase.appendChild(error);
         root.appendChild(testCase);
+        logger.debug("Saved issue severity: " + issue.severity());
         counter++;
       }
       if (!context.getChildren(r).isEmpty()) {
