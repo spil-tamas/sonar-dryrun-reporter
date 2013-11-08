@@ -83,7 +83,15 @@ public class XunitFormat implements PostJob {
         dom.appendChild(root);
 
         int alerts = reportAlerts(context, dom, root);
-        int issues = reportIssues(context, project, dom, root);
+        int issues = 0;
+        if (!project.getModules().isEmpty()) {
+          for (Project module : project.getModules()) {
+            issues += reportIssues(context, module, dom, root);
+          }
+        } else {
+          issues = reportIssues(context, project, dom, root);
+        }
+
         root.setAttribute("errors", String.valueOf(alerts + issues));
 
         if ((issues + alerts) == 0) {
@@ -133,13 +141,13 @@ public class XunitFormat implements PostJob {
         error.setAttribute("message", ruleI18n.getName(rule, Locale.ENGLISH));
         testCase.setAttribute("name", rule.getRepositoryKey() + ":" + rule.getKey());
         error.setTextContent(
-            issue.severity() + "\n"
-              + ruleI18n.getName(rule, Locale.ENGLISH)
-              + "\nin file:"
-              + r.getLongName() + ":" + ((issue.line() != null) ? issue.line() : "")
-              + "\nlink: "
-              + settings.getString("sonar.host.url") + "/rules/show/" + rule.getRepositoryKey() + ":" + rule.getConfigKey()
-            );
+          issue.severity() + "\n"
+            + ruleI18n.getName(rule, Locale.ENGLISH)
+            + "\nin file:"
+            + r.getLongName() + ":" + ((issue.line() != null) ? issue.line() : "")
+            + "\nlink: "
+            + settings.getString("sonar.host.url") + "/rules/show/" + rule.getRepositoryKey() + ":" + rule.getConfigKey()
+          );
         logger.debug("Rule: " + ruleI18n.getName(rule, Locale.ENGLISH));
         testCase.appendChild(error);
         root.appendChild(testCase);
