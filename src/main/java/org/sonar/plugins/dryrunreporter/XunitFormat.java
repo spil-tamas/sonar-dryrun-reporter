@@ -117,7 +117,7 @@ public class XunitFormat implements PostJob {
     }
   }
 
-  private int reportIssues(SensorContext context, Resource<?> resource, Document dom, Element root) {
+  private int reportIssues(final SensorContext context, Resource<?> resource, final Document dom, final Element root) {
     // TODO: with API 4.0 we can use the org.sonar.api.issue.ProjectIssues#issues()
     int counter = 0;
     for (Resource<?> r : context.getChildren(resource)) {
@@ -126,7 +126,6 @@ public class XunitFormat implements PostJob {
       logger.debug("Issues: " + issuable.issues().size());
       for (Issue issue : issuable.issues()) {
         Rule rule = ruleFinder.findByKey(issue.ruleKey());
-        logger.debug("Rule: " + rule.getName());
         Element testCase = dom.createElement("testcase");
         Element error = dom.createElement("error");
         // TODO: with api 4.0 we can get the isNew
@@ -141,11 +140,13 @@ public class XunitFormat implements PostJob {
               + "\nlink: "
               + settings.getString("sonar.host.url") + "/rules/show/" + rule.getRepositoryKey() + ":" + rule.getConfigKey()
             );
+        logger.debug("Rule: " + ruleI18n.getName(rule, Locale.ENGLISH));
         testCase.appendChild(error);
         root.appendChild(testCase);
         logger.debug("Saved issue severity: " + issue.severity());
         counter++;
       }
+      logger.debug("# of children: " + context.getChildren(r).size());
       if (!context.getChildren(r).isEmpty()) {
         counter = counter + reportIssues(context, r, dom, root);
       }
