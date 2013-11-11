@@ -19,26 +19,22 @@
  */
 package org.sonar.plugins.dryrunreporter;
 
-import org.slf4j.LoggerFactory;
-
-import org.slf4j.Logger;
-
 import org.apache.xml.serialize.OutputFormat;
 import org.apache.xml.serialize.XMLSerializer;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.sonar.api.CoreProperties;
 import org.sonar.api.batch.PostJob;
 import org.sonar.api.batch.SensorContext;
-import org.sonar.api.component.ResourcePerspectives;
 import org.sonar.api.config.Settings;
 import org.sonar.api.i18n.RuleI18n;
-import org.sonar.api.issue.Issuable;
 import org.sonar.api.issue.Issue;
+import org.sonar.api.issue.ProjectIssues;
 import org.sonar.api.measures.CoreMetrics;
 import org.sonar.api.measures.Measure;
 import org.sonar.api.measures.MeasuresFilters;
 import org.sonar.api.measures.Metric;
 import org.sonar.api.resources.Project;
-import org.sonar.api.resources.Resource;
 import org.sonar.api.rules.Rule;
 import org.sonar.api.rules.RuleFinder;
 import org.sonar.api.scan.filesystem.ModuleFileSystem;
@@ -60,15 +56,17 @@ public class XunitFormat implements PostJob {
   Logger logger = LoggerFactory.getLogger(getClass());
 
   private Settings settings;
-  private ResourcePerspectives resourcePerspectives;
   private ModuleFileSystem fileSystem;
   private RuleFinder ruleFinder;
   private RuleI18n ruleI18n;
 
-  public XunitFormat(Settings settings, ModuleFileSystem fileSystem, ResourcePerspectives resourcePerspectives, RuleFinder ruleFinder, RuleI18n ruleI18n) {
+  private ProjectIssues projectIssues;
+
+  public XunitFormat(Settings settings, ModuleFileSystem fileSystem, ProjectIssues projectIssues,
+      RuleFinder ruleFinder, RuleI18n ruleI18n) {
     this.settings = settings;
     this.fileSystem = fileSystem;
-    this.resourcePerspectives = resourcePerspectives;
+    this.projectIssues = projectIssues;
     this.ruleFinder = ruleFinder;
     this.ruleI18n = ruleI18n;
   }
@@ -79,18 +77,11 @@ public class XunitFormat implements PostJob {
         DocumentBuilderFactory dbf = DocumentBuilderFactory.newInstance();
         DocumentBuilder db = dbf.newDocumentBuilder();
         Document dom = db.newDocument();
-        Element root = dom.createElement("testsuite");
+        Element root = dom.createElement("testsuites");
         dom.appendChild(root);
 
         int alerts = reportAlerts(context, dom, root);
-        int issues = 0;
-        if (!project.getModules().isEmpty()) {
-          for (Project module : project.getModules()) {
-            issues += reportIssues(context, module, dom, root);
-          }
-        } else {
-          issues = reportIssues(context, project, dom, root);
-        }
+        int issues = reportIssues(context, dom, root);
 
         root.setAttribute("errors", String.valueOf(alerts + issues));
 
@@ -125,46 +116,61 @@ public class XunitFormat implements PostJob {
     }
   }
 
-  private int reportIssues(final SensorContext context, Resource<?> resource, final Document dom, final Element root) {
-    // TODO: with API 4.0 we can use the org.sonar.api.issue.ProjectIssues#issues()
-    int counter = 0;
-    for (Resource<?> r : context.getChildren(resource)) {
-      Issuable issuable = resourcePerspectives.as(Issuable.class, r);
-      logger.debug("Resource: " + r.getEffectiveKey());
-      logger.debug("Issues: " + issuable.issues().size());
-      for (Issue issue : issuable.issues()) {
-        Rule rule = ruleFinder.findByKey(issue.ruleKey());
-        Element testCase = dom.createElement("testcase");
-        Element error = dom.createElement("error");
-        // TODO: with api 4.0 we can get the isNew
-        testCase.setAttribute("classname", "issues");
-        error.setAttribute("message", ruleI18n.getName(rule, Locale.ENGLISH));
-        testCase.setAttribute("name", rule.getRepositoryKey() + ":" + rule.getKey());
-        error.setTextContent(
+  private int reportIssues(final SensorContext context, final Document dom, final Element root) {
+    int counterOld = 0;
+    int counterNew = 0;
+    Element oldIssues = dom.createElement("testsuite");
+    oldIssues.setAttribute("name", "Old issues");
+    root.appendChild(oldIssues);
+
+    Element newIssues = dom.createElement("testsuite");
+    newIssues.setAttribute("name", "New issues");
+    root.appendChild(newIssues);
+
+    for (Issue issue : projectIssues.issues()) {
+      Rule rule = ruleFinder.findByKey(issue.ruleKey());
+      Element testCase = dom.createElement("testcase");
+      Element error = dom.createElement("error");
+      // TODO: with api 4.0 we can get the isNew
+      testCase.setAttribute("classname", "issues");
+      error.setAttribute("message", ruleI18n.getName(rule, Locale.ENGLISH));
+      testCase.setAttribute("name", rule.getRepositoryKey() + ":" + rule.getKey());
+      error.setTextContent(
           issue.severity() + "\n"
             + ruleI18n.getName(rule, Locale.ENGLISH)
             + "\nin file:"
-            + r.getLongName() + ":" + ((issue.line() != null) ? issue.line() : "")
+            + issue.componentKey() + ":" + ((issue.line() != null) ? issue.line() : "")
             + "\nlink: "
             + settings.getString("sonar.host.url") + "/rules/show/" + rule.getRepositoryKey() + ":" + rule.getConfigKey()
           );
-        logger.debug("Rule: " + ruleI18n.getName(rule, Locale.ENGLISH));
-        testCase.appendChild(error);
-        root.appendChild(testCase);
-        logger.debug("Saved issue severity: " + issue.severity());
-        counter++;
+      logger.debug("Rule: " + ruleI18n.getName(rule, Locale.ENGLISH));
+      logger.debug("Rule: " + issue.message());
+      testCase.appendChild(error);
+      if(issue.isNew()){
+        newIssues.appendChild(testCase);
+        counterNew++;
+      }else {
+        oldIssues.appendChild(testCase);
+        counterOld++;
       }
-      logger.debug("# of children: " + context.getChildren(r).size());
-      if (!context.getChildren(r).isEmpty()) {
-        counter = counter + reportIssues(context, r, dom, root);
-      }
+      logger.debug("Saved issue severity: " + issue.severity());
     }
-    return counter;
+    oldIssues.setAttribute("errors", String.valueOf(counterOld));
+    newIssues.setAttribute("errors", String.valueOf(counterNew));
+
+    oldIssues.setAttribute("tests", String.valueOf(counterOld+1));
+    newIssues.setAttribute("tests", String.valueOf(counterNew+1));
+
+    return counterNew+counterOld;
   }
 
   private int reportAlerts(SensorContext context, Document dom, Element root) {
     int counter = 0;
     Collection<Measure> measures = context.getMeasures(MeasuresFilters.all());
+    Element suite = dom.createElement("testsuite");
+    suite.setAttribute("name", "Alerts");
+    root.appendChild(suite);
+
     for (Measure measure : measures) {
       if (isErrorAlert(measure) || isWarningAlert(measure)) {
         Element testCase = dom.createElement("testcase");
@@ -177,10 +183,12 @@ public class XunitFormat implements PostJob {
           + measure.getAlertText()
           + "\n");
         testCase.appendChild(error);
-        root.appendChild(testCase);
+        suite.appendChild(testCase);
         counter++;
       }
     }
+    suite.setAttribute("errors", String.valueOf(counter));
+    suite.setAttribute("tests", String.valueOf(counter+1));
     return counter;
   }
 

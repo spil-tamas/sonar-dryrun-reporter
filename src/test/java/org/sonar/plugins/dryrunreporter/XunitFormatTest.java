@@ -25,7 +25,6 @@ import org.sonar.api.rules.RuleFinder;
 import org.junit.Before;
 import org.junit.Test;
 import org.sonar.api.batch.SensorContext;
-import org.sonar.api.component.ResourcePerspectives;
 import org.sonar.api.config.Settings;
 import org.sonar.api.resources.Project;
 import org.sonar.api.scan.filesystem.ModuleFileSystem;
@@ -43,7 +42,6 @@ public class XunitFormatTest {
 
   @Before
   public void setup() throws URISyntaxException, IOException {
-    ResourcePerspectives resourcePerspectives = mock(ResourcePerspectives.class);
     Settings settings = mock(Settings.class);
     Project project = new Project("dummy");
     SensorContext context = mock(SensorContext.class);
@@ -52,7 +50,7 @@ public class XunitFormatTest {
 
     ModuleFileSystem fileSystem = mockModuleFileSystem(null, null);
 
-    new XunitFormat(settings, fileSystem, resourcePerspectives, ruleFinder, ruleI18n).executeOn(project, context);
+    new XunitFormat(settings, fileSystem, null, ruleFinder, ruleI18n).executeOn(project, context);
   }
 
   @Test
